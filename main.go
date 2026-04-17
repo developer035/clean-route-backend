@@ -227,13 +227,13 @@ func findRoute(c *gin.Context) {
 			mode = "car"
 		}
 		var routes graphhopper.RouteData = findGraphhopperRoute(source, destination, mode)
-		for i := 0; i < len(routes.Paths); i++ {
-			routes.Paths[i] = utils.CalculateRouteExposureGraphhopper(routes.Paths[i], delayCode)
-			routes.Paths[i].TotalEnergy = utils.CalculateRouteEnergy(routes.Paths[i], mode)
-		}
 		if len(routes.Paths) == 0 {
 			c.IndentedJSON(http.StatusNotFound, gin.H{"error": "No routes found"})
 			return
+		}
+		for i := 0; i < len(routes.Paths); i++ {
+			routes.Paths[i] = utils.CalculateRouteExposureGraphhopper(routes.Paths[i], delayCode)
+			routes.Paths[i].TotalEnergy = utils.CalculateRouteEnergy(routes.Paths[i], mode)
 		}
 
 		if mode == "car" {
@@ -351,6 +351,10 @@ func findAllRoutes(c *gin.Context) {
 		// find the graphhopper route
 		fmt.Println("@@@@@@@@@@@@@ Finding the route for Motorbike @@@@@@@@@@@@@@@@")
 		var routes graphhopper.RouteData = findGraphhopperRoute(source, destination, mode)
+		if len(routes.Paths) == 0 {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"error": "No routes found"})
+			return
+		}
 		for i := 0; i < len(routes.Paths); i++ {
 			routes.Paths[i] = utils.CalculateRouteExposureGraphhopper(routes.Paths[i], delayCode)
 			routes.Paths[i].TotalEnergy = utils.CalculateRouteEnergy(routes.Paths[i], mode)
@@ -358,10 +362,6 @@ func findAllRoutes(c *gin.Context) {
 			fmt.Println("Duration: ", routes.Paths[i].Time)
 			fmt.Println("Total Exposure: ", routes.Paths[i].TotalExposure)
 			fmt.Println("Total Energy: ", routes.Paths[i].TotalEnergy)
-		}
-		if len(routes.Paths) == 0 {
-			c.IndentedJSON(http.StatusNotFound, gin.H{"error": "No routes found"})
-			return
 		}
 
 		var routeList graphhopper.RouteList
