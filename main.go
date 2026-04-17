@@ -231,6 +231,10 @@ func findRoute(c *gin.Context) {
 			routes.Paths[i] = utils.CalculateRouteExposureGraphhopper(routes.Paths[i], delayCode)
 			routes.Paths[i].TotalEnergy = utils.CalculateRouteEnergy(routes.Paths[i], mode)
 		}
+		if len(routes.Paths) == 0 {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"error": "No routes found"})
+			return
+		}
 
 		if mode == "car" {
 			mode = "driving-traffic"
@@ -296,7 +300,7 @@ func findRoute(c *gin.Context) {
 
 				// sorting the top three routes based on exposure
 				sort.Slice(routes.Paths, func(i, j int) bool {
-					return routes.Paths[i].TotalExposure < routes.Paths[i].TotalExposure
+					return routes.Paths[i].TotalExposure < routes.Paths[j].TotalExposure
 				})
 
 				// sorting all the routes based on time
@@ -306,7 +310,7 @@ func findRoute(c *gin.Context) {
 
 				// sorting the top two balanced(time, exposure) routes with energy
 				sort.Slice(routes.Paths[:2], func(i, j int) bool {
-					return routes.Paths[i].TotalEnergy < routes.Paths[i].TotalEnergy
+					return routes.Paths[i].TotalEnergy < routes.Paths[j].TotalEnergy
 				})
 			}
 
@@ -354,6 +358,10 @@ func findAllRoutes(c *gin.Context) {
 			fmt.Println("Duration: ", routes.Paths[i].Time)
 			fmt.Println("Total Exposure: ", routes.Paths[i].TotalExposure)
 			fmt.Println("Total Energy: ", routes.Paths[i].TotalEnergy)
+		}
+		if len(routes.Paths) == 0 {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"error": "No routes found"})
+			return
 		}
 
 		var routeList graphhopper.RouteList
@@ -428,7 +436,7 @@ func findAllRoutes(c *gin.Context) {
 
 			// sorting all the routes based on exposure
 			sort.Slice(routes.Paths, func(i, j int) bool {
-				return routes.Paths[i].TotalExposure < routes.Paths[i].TotalExposure
+				return routes.Paths[i].TotalExposure < routes.Paths[j].TotalExposure
 			})
 
 			// sorting top 3 routes based on time
@@ -438,7 +446,7 @@ func findAllRoutes(c *gin.Context) {
 
 			// sorting the top two balanced(time, exposure) routes with energy
 			sort.Slice(routes.Paths[:2], func(i, j int) bool {
-				return routes.Paths[i].TotalEnergy < routes.Paths[i].TotalEnergy
+				return routes.Paths[i].TotalEnergy < routes.Paths[j].TotalEnergy
 			})
 
 			routeList.Balanced = routes.Paths[0]
