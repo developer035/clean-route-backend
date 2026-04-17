@@ -302,14 +302,22 @@ func findRoute(c *gin.Context) {
 				sort.Slice(routes.Paths, func(i, j int) bool {
 					return routes.Paths[i].TotalExposure < routes.Paths[j].TotalExposure
 				})
+				topThree := len(routes.Paths)
+				if topThree > 3 {
+					topThree = 3
+				}
 
 				// sorting all the routes based on time
-				sort.SliceStable(routes.Paths[:3], func(i, j int) bool {
+				sort.SliceStable(routes.Paths[:topThree], func(i, j int) bool {
 					return routes.Paths[i].Time < routes.Paths[j].Time
 				})
+				topTwo := topThree
+				if topTwo > 2 {
+					topTwo = 2
+				}
 
 				// sorting the top two balanced(time, exposure) routes with energy
-				sort.Slice(routes.Paths[:2], func(i, j int) bool {
+				sort.Slice(routes.Paths[:topTwo], func(i, j int) bool {
 					return routes.Paths[i].TotalEnergy < routes.Paths[j].TotalEnergy
 				})
 			}
@@ -438,14 +446,22 @@ func findAllRoutes(c *gin.Context) {
 			sort.Slice(routes.Paths, func(i, j int) bool {
 				return routes.Paths[i].TotalExposure < routes.Paths[j].TotalExposure
 			})
+			topThree := len(routes.Paths)
+			if topThree > 3 {
+				topThree = 3
+			}
 
 			// sorting top 3 routes based on time
-			sort.SliceStable(routes.Paths[:3], func(i, j int) bool {
+			sort.SliceStable(routes.Paths[:topThree], func(i, j int) bool {
 				return routes.Paths[i].Time < routes.Paths[j].Time
 			})
+			topTwo := topThree
+			if topTwo > 2 {
+				topTwo = 2
+			}
 
 			// sorting the top two balanced(time, exposure) routes with energy
-			sort.Slice(routes.Paths[:2], func(i, j int) bool {
+			sort.Slice(routes.Paths[:topTwo], func(i, j int) bool {
 				return routes.Paths[i].TotalEnergy < routes.Paths[j].TotalEnergy
 			})
 
