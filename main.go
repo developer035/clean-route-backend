@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -556,26 +557,19 @@ func SetReferrerPolicy() gin.HandlerFunc {
 
 func main() {
 	gin.SetMode(gin.ReleaseMode)
-	// if os.Getenv("RAILWAY") != "true" {
 	viper.SetConfigType("env")
-	// viper.AddConfigPath(".")
-	// viper.SetConfigFile(".env")
-	// viper.ReadInConfig()
+	viper.AddConfigPath(".")
+	viper.SetConfigName(".env")
 
-	if os.Getenv("RAILWAY") == "true" {
-		viper.SetConfigFile("ENV")
-	} else {
-		viper.SetConfigFile(".env")
-	}
-	
-	viper.ReadInConfig()
 	viper.AutomaticEnv()
-	// viper.SetConfigFile(".env")
-	err := viper.ReadInConfig()
-	if err != nil {
-		log.Fatalf("Error while reading config file %s", err)
+	if err := viper.ReadInConfig(); err != nil {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if errors.As(err, &configFileNotFoundError) {
+			log.Println("No config file found, using environment variables")
+		} else {
+			log.Fatalf("Error while reading config file: %v", err)
+		}
 	}
-	// }
 
 	router := gin.Default()
 
