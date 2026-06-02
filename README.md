@@ -21,3 +21,7 @@ Recommended steps for bootstrapping the servers:
 ### Installation instructions
 1. Create a .env file and replace `xxxx` with your own secret values.
 2. Just run `air` in terminal and see what happens, if it says `running...`, then you're good to go and your Go backend server is up and running. Otherwise, just try to debug the issue. Maybe you've not installed a tool properly, or it's not in your $PATH variable or something that I might have missed in the instructions, so please reach out to me to improve the instructions.
+
+### Environment variables
+- Local development: you can provide values in a local `.env` file.
+- Production (for example Vercel): set environment variables in the platform/project settings. A local `.env` file is not required in production.
