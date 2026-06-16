@@ -40,11 +40,32 @@ func FetchAQIData(location []float64, delayCode uint8) (float64, error) {
 	body, err := io.ReadAll(resp.Body)
 	checkErrNil(err)
 
-	var waqiResponse waqi.APIResponse
+	// First, check if the response status is ok before unmarshalling data field
+	var statusCheck struct {
+		Status string      `json:"status"`
+		Data   interface{} `json:"data"` // Use interface{} to accept both object and string
+	}
 
-	err = json.Unmarshal([]byte(body), &waqiResponse)
+	err = json.Unmarshal([]byte(body), &statusCheck)
 	if err != nil {
 		log.Fatal("Error while unmarshling JSON: ", err)
+	}
+
+	if statusCheck.Status != "ok" {
+		// Extract error message if data is a string
+		errMsg := "WAQI response is not 'OK' but: " + statusCheck.Status
+		if dataStr, ok := statusCheck.Data.(string); ok {
+			errMsg = "WAQI API Error: " + dataStr
+		}
+		log.Printf("WAQI fetch failed for location [lat=%f lon=%f]: %s", location[1], location[0], errMsg)
+		return 0, errors.New(errMsg)
+	}
+
+	// Now safely unmarshal into the full AQIData struct
+	var waqiResponse waqi.APIResponse
+	err = json.Unmarshal([]byte(body), &waqiResponse)
+	if err != nil {
+		log.Fatal("Error while unmarshling AQI data JSON: ", err)
 	}
 
 	// Currently not utilizing the delayCode - no forecasting till now.
@@ -60,6 +81,7 @@ func FetchAQIData(location []float64, delayCode uint8) (float64, error) {
 	// 2. We need to make api call to AWS Sagemaker and get the forecasted aqi value.
 
 	if waqiResponse.Status != "ok" {
+		log.Printf("WAQI fetch failed for location [lat=%f lon=%f]: status=%s", location[1], location[0], waqiResponse.Status)
 		return 0, errors.New("WAQI response is not 'OK' but: " + waqiResponse.Status)
 	} else {
 		return waqiResponse.Data.IAQI["pm25"].V, nil

@@ -84,9 +84,10 @@ type Route struct {
 }
 
 type RouteData struct {
-	Routes []Route `json:"routes"`
-	Code   string  `json:"code"`
-	UUID   string  `json:"uuid"`
+	Routes  []Route `json:"routes"`
+	Code    string  `json:"code"`
+	UUID    string  `json:"uuid"`
+	Message string  `json:"message"`
 }
 
 type RouteList struct {

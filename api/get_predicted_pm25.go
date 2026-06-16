@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -43,22 +44,20 @@ func GetPredictedPm25(df []models.FeatureVector) ([]float64, error) {
 	client := &http.Client{}
 	resp, err := client.Do(r)
 	checkErrNil(err)
-
-	if resp.StatusCode != http.StatusOK {
-		log.Fatal("The Amazon EC2 instance is not responding...Got status code: ", resp.StatusCode)
-	}
-
 	defer resp.Body.Close()
-	// fmt.Println("After the Request...")
-	post := &Post{}
 
-	err = json.NewDecoder(resp.Body).Decode(post)
+	body, err := io.ReadAll(resp.Body)
 	checkErrNil(err)
 
 	if resp.StatusCode != http.StatusOK {
-		log.Fatal("Error while making calling API endpoint", err)
-		return nil, err
+		log.Fatalf("ML endpoint error: status=%d body=%s", resp.StatusCode, string(body))
 	}
+
+	// fmt.Println("After the Request...")
+	post := &Post{}
+
+	err = json.Unmarshal(body, post)
+	checkErrNil(err)
 
 	// fmt.Println("++++++++++++++ Inside the get predicted pm2.5 ++++++++++++++++")
 	// fmt.Println("Acutal: ", inputFeatures.IPM, "Predicted: ", post.FPM)

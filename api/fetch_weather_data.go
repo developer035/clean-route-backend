@@ -39,6 +39,10 @@ func FetchWeatherData(location []float64) openweather.WeatherData {
 	body, err := io.ReadAll(resp.Body)
 	checkErrNil(err)
 
+	if resp.StatusCode != http.StatusOK {
+		log.Fatalf("OpenWeather API error for location [lat=%f lon=%f]: status=%d body=%s", location[1], location[0], resp.StatusCode, string(body))
+	}
+
 	var weatherResponse openweather.WeatherData
 
 	err = json.Unmarshal([]byte(body), &weatherResponse)

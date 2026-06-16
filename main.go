@@ -59,14 +59,14 @@ func findMapboxRoute(source [2]float64, destination [2]float64, delayCode uint8)
 
 	resp, err := http.Get(url)
 	checkErrNil(err)
-
-	if resp.StatusCode != http.StatusOK {
-		log.Fatal("Error while calling Mapbox API", err)
-	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	checkErrNil(err)
+
+	if resp.StatusCode != http.StatusOK {
+		log.Fatalf("Mapbox API error: status=%d body=%s", resp.StatusCode, string(body))
+	}
 
 	var routes mapbox.RouteData
 
@@ -75,9 +75,13 @@ func findMapboxRoute(source [2]float64, destination [2]float64, delayCode uint8)
 		log.Fatal("Error while unmarshling JSON: ", err)
 	}
 
-	fmt.Println("Distance", routes.Routes[0].Distance)
-	fmt.Println("Total Exposure: ", routes.Routes[0].TotalExposure)
-	fmt.Println("Total Energy: ", routes.Routes[0].TotalEnergy)
+	if len(routes.Routes) > 0 {
+		fmt.Println("Distance", routes.Routes[0].Distance)
+		fmt.Println("Total Exposure: ", routes.Routes[0].TotalExposure)
+		fmt.Println("Total Energy: ", routes.Routes[0].TotalEnergy)
+	} else {
+		log.Printf("Mapbox returned no routes: code=%s message=%s uuid=%s", routes.Code, routes.Message, routes.UUID)
+	}
 	fmt.Println("Code:", routes.Code)
 	fmt.Println("UUID:", routes.UUID)
 	return routes
@@ -108,8 +112,8 @@ func findGraphhopperRoute(source [2]float64, destination [2]float64, mode string
 	params.Add("points_encoded", "false")
 	params.Add("algorithm", "alternative_route")
 	params.Add("alternative_route.max_paths", "4")
-	params.Add("alternative_route.max_weight_factor", "1.4")
-	params.Add("alternative_route.max_share_factor", "0.6")
+	params.Add("alternative_route.max_weight_factor", "1.6")
+	params.Add("alternative_route.max_share_factor", "0.4")
 	params.Add("elevation", "true")
 
 	url := baseUrl + params.Encode()
@@ -121,6 +125,13 @@ func findGraphhopperRoute(source [2]float64, destination [2]float64, mode string
 	body, err := io.ReadAll(resp.Body)
 	checkErrNil(err)
 
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("GraphHopper error status=%d body=%s\n", resp.StatusCode, string(body))
+		log.Printf("GraphHopper API error: status=%d mode=%s src=[lat=%f lon=%f] dst=[lat=%f lon=%f] body=%s",
+			resp.StatusCode, mode, source[1], source[0], destination[1], destination[0], string(body))
+		return graphhopper.RouteData{}
+	}
+
 	var routes graphhopper.RouteData
 
 	err = json.Unmarshal([]byte(body), &routes)
@@ -129,6 +140,7 @@ func findGraphhopperRoute(source [2]float64, destination [2]float64, mode string
 	}
 
 	if len(routes.Paths) == 0 {
+		fmt.Printf("GraphHopper returned no paths. response=%s\n", string(body))
 		return routes
 	}
 
@@ -154,10 +166,17 @@ func findRoute(c *gin.Context) {
 	mode := queryData.Mode
 	routePref := queryData.RoutePreference
 
+	log.Printf("/route request: mode=%s routePref=%s src=[lat=%f lon=%f] dst=[lat=%f lon=%f] delayCode=%d",
+		mode, routePref, source[1], source[0], destination[1], destination[0], delayCode)
+
 	if mode == "driving-traffic" && (routePref == "fastest" || routePref == "balanced") {
 		fmt.Println("@@@@@@@@@@@@@@@@@@@@Mapbox Route@@@@@@@@@@@@@@")
 		// Calling Mapbox API
 		var routes mapbox.RouteData = findMapboxRoute(source, destination, delayCode)
+		if len(routes.Routes) == 0 {
+			c.IndentedJSON(http.StatusBadGateway, gin.H{"error": "No routes returned by Mapbox."})
+			return
+		}
 		// Finding the energy of each routes and exposure
 		if mode == "driving-traffic" {
 			mode = "car"
@@ -227,7 +246,15 @@ func findRoute(c *gin.Context) {
 		if mode == "driving-traffic" {
 			mode = "car"
 		}
+		log.Printf("Calling GraphHopper for routePref=%s mode=%s src=[lat=%f lon=%f] dst=[lat=%f lon=%f]",
+			routePref, mode, source[1], source[0], destination[1], destination[0])
 		var routes graphhopper.RouteData = findGraphhopperRoute(source, destination, mode)
+		if len(routes.Paths) == 0 {
+			log.Printf("GraphHopper returned 0 paths for routePref=%s mode=%s src=[lat=%f lon=%f] dst=[lat=%f lon=%f]",
+				routePref, mode, source[1], source[0], destination[1], destination[0])
+			c.IndentedJSON(http.StatusBadGateway, gin.H{"error": "No routes returned by GraphHopper. This usually indicates API throttling/limit reached, invalid coordinates, or no routable path."})
+			return
+		}
 		for i := 0; i < len(routes.Paths); i++ {
 			routes.Paths[i] = utils.CalculateRouteExposureGraphhopper(routes.Paths[i], delayCode)
 			routes.Paths[i].TotalEnergy = utils.CalculateRouteEnergy(routes.Paths[i], mode)
@@ -261,7 +288,7 @@ func findRoute(c *gin.Context) {
 			// fmt.Println(routes)
 			c.IndentedJSON(http.StatusOK, routes.Paths[0])
 			return
-		} else if routePref == "emission" {
+		} else if routePref == "emission" || routePref == "lecr" {
 			// sort the routes with total energy and return the lco2 path
 			sort.SliceStable(routes.Paths, func(i, j int) bool {
 				return routes.Paths[i].TotalEnergy < routes.Paths[j].TotalEnergy
@@ -297,7 +324,7 @@ func findRoute(c *gin.Context) {
 
 				// sorting the top three routes based on exposure
 				sort.Slice(routes.Paths, func(i, j int) bool {
-					return routes.Paths[i].TotalExposure < routes.Paths[i].TotalExposure
+					return routes.Paths[i].TotalExposure < routes.Paths[j].TotalExposure
 				})
 
 				// sorting all the routes based on time
@@ -307,7 +334,7 @@ func findRoute(c *gin.Context) {
 
 				// sorting the top two balanced(time, exposure) routes with energy
 				sort.Slice(routes.Paths[:2], func(i, j int) bool {
-					return routes.Paths[i].TotalEnergy < routes.Paths[i].TotalEnergy
+					return routes.Paths[i].TotalEnergy < routes.Paths[j].TotalEnergy
 				})
 			}
 
@@ -348,6 +375,10 @@ func findAllRoutes(c *gin.Context) {
 		// find the graphhopper route
 		fmt.Println("@@@@@@@@@@@@@ Finding the route for Motorbike @@@@@@@@@@@@@@@@")
 		var routes graphhopper.RouteData = findGraphhopperRoute(source, destination, mode)
+		if len(routes.Paths) == 0 {
+			c.IndentedJSON(http.StatusBadGateway, gin.H{"error": "No routes returned by GraphHopper. This usually indicates API throttling/limit reached, invalid coordinates, or no routable path."})
+			return
+		}
 		for i := 0; i < len(routes.Paths); i++ {
 			routes.Paths[i] = utils.CalculateRouteExposureGraphhopper(routes.Paths[i], delayCode)
 			routes.Paths[i].TotalEnergy = utils.CalculateRouteEnergy(routes.Paths[i], mode)
@@ -429,7 +460,7 @@ func findAllRoutes(c *gin.Context) {
 
 			// sorting all the routes based on exposure
 			sort.Slice(routes.Paths, func(i, j int) bool {
-				return routes.Paths[i].TotalExposure < routes.Paths[i].TotalExposure
+				return routes.Paths[i].TotalExposure < routes.Paths[j].TotalExposure
 			})
 
 			// sorting top 3 routes based on time
@@ -439,7 +470,7 @@ func findAllRoutes(c *gin.Context) {
 
 			// sorting the top two balanced(time, exposure) routes with energy
 			sort.Slice(routes.Paths[:2], func(i, j int) bool {
-				return routes.Paths[i].TotalEnergy < routes.Paths[i].TotalEnergy
+				return routes.Paths[i].TotalEnergy < routes.Paths[j].TotalEnergy
 			})
 
 			routeList.Balanced = routes.Paths[0]
@@ -454,8 +485,18 @@ func findAllRoutes(c *gin.Context) {
 
 		var graphhopperRoute graphhopper.RouteData = findGraphhopperRoute(source, destination, "car")
 
+		if len(mapboxRoute.Routes) == 0 {
+			c.IndentedJSON(http.StatusBadGateway, gin.H{"error": "No routes returned by Mapbox."})
+			return
+		}
+
+		if len(graphhopperRoute.Paths) == 0 {
+			c.IndentedJSON(http.StatusBadGateway, gin.H{"error": "No routes returned by GraphHopper. This usually indicates API throttling/limit reached, invalid coordinates, or no routable path."})
+			return
+		}
+
 		// Exposure and Energy calculations
-		for i := 0; i < len(mapboxRoute.Routes); i++ {
+		for i := 0; i < len(mapboxRoute.Routes) && i < len(graphhopperRoute.Paths); i++ {
 			mapboxRoute.Routes[i] = utils.CalculateRouteExposureMapbox(mapboxRoute.Routes[i], delayCode)
 			graphhopperRoute.Paths[i].TotalExposure = mapboxRoute.Routes[i].TotalExposure
 
@@ -490,7 +531,7 @@ func findAllRoutes(c *gin.Context) {
 		// for shortest route - also will consider the mapbox route
 		index = 0
 		for i := 0; i < len(mapboxRoute.Routes); i++ {
-			if mapboxRoute.Routes[i].Distance < mapboxRoute.Routes[i].Distance {
+			if mapboxRoute.Routes[i].Distance < mapboxRoute.Routes[index].Distance {
 				index = i
 			}
 		}
@@ -499,7 +540,7 @@ func findAllRoutes(c *gin.Context) {
 		// for leap route - will consider the graphhopper route
 		index = 0
 		for i := 0; i < len(graphhopperRoute.Paths); i++ {
-			if graphhopperRoute.Paths[i].TotalExposure < graphhopperRoute.Paths[i].TotalExposure {
+			if graphhopperRoute.Paths[i].TotalExposure < graphhopperRoute.Paths[index].TotalExposure {
 				index = i
 			}
 		}
@@ -508,7 +549,7 @@ func findAllRoutes(c *gin.Context) {
 		// for lco2 route - will consider the graphhopper route
 		index = 0
 		for i := 0; i < len(graphhopperRoute.Paths); i++ {
-			if graphhopperRoute.Paths[i].TotalEnergy < graphhopperRoute.Paths[i].TotalEnergy {
+			if graphhopperRoute.Paths[i].TotalEnergy < graphhopperRoute.Paths[index].TotalEnergy {
 				index = i
 			}
 		}
